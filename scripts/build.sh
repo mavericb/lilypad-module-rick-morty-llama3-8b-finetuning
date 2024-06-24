@@ -28,7 +28,7 @@ cd ../docker/
 export DOCKER_BUILDKIT=1
 
 # Login to Docker Hub
-docker login -u mavericb -p dckr_pat_oI_X-sDMozIchMQoIyxR-eBZDKA
+docker login -u mavericb -p X
 
 # Build the Docker image
 docker build -f Dockerfile-llama3-8b -t mavericb/ollama:llama3-8b-lilypad$VLLAMA3_8B .
