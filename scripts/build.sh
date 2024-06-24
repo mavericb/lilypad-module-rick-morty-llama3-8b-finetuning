@@ -41,4 +41,4 @@ docker build -f Dockerfile-llama3-8b -t mavericb/ollama:llama3-8b-lilypad-$NEW_T
 echo "Publishing Docker containers..."
 docker push mavericb/ollama:llama3-8b-lilypad-$NEW_TAG
 
-echo "Done!"
+echo "Done!"#
