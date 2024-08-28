@@ -13,9 +13,11 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 RUN pip3 install accelerate==0.21.0 peft==0.4.0 bitsandbytes==0.40.2 transformers==4.31.0 trl==0.4.7 scipy
 
 # Copy main.py script
+# COPY docker/main.py /app/main.py # local docker build
 COPY docker/main.py /app/main.py
 
 FROM builder as runner
+# COPY docker/start.sh / # local docker build
 COPY docker/start.sh /
 RUN chmod +x /start.sh
 
