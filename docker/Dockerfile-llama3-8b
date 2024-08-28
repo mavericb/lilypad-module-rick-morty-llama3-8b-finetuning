@@ -14,11 +14,11 @@ RUN pip3 install accelerate==0.21.0 peft==0.4.0 bitsandbytes==0.40.2 transformer
 
 # Copy main.py script
 # COPY docker/main.py /app/main.py # local docker build
-COPY docker/main.py /app/main.py
+COPY main.py /app/main.py
 
 FROM builder as runner
 # COPY docker/start.sh / # local docker build
-COPY docker/start.sh /
+COPY start.sh /
 RUN chmod +x /start.sh
 
 CMD ["/start.sh"]
