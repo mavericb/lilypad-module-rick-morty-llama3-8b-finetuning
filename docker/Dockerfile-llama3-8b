@@ -10,7 +10,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y curl python3 python3-pip git libgl1-mesa-glx libglib2.0-0
 
 # Install additional dependencies required by main.py
-RUN pip3 install -q accelerate==0.21.0 peft==0.4.0 bitsandbytes==0.40.2 transformers==4.31.0 trl==0.4.7 scipy
+RUN pip3 install accelerate==0.21.0 peft==0.4.0 bitsandbytes==0.40.2 transformers==4.31.0 trl==0.4.7 scipy
 
 # Copy main.py script
 COPY docker/main.py /app/main.py
