@@ -13,6 +13,7 @@ from transformers import (
 from peft import LoraConfig, PeftModel
 from trl import SFTTrainer
 
+print("main.py started") 
 # The model that you want to train from the Hugging Face hub
 model_name = "NousResearch/Meta-Llama-3-8B-Instruct"
 
