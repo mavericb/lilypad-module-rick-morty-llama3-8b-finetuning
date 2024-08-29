@@ -42,7 +42,7 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-COPY requirements.txt /app/
+COPY docker/requirements.txt /app/
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Download model and dataset
