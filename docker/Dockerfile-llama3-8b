@@ -17,6 +17,10 @@ RUN apt-get update -y && \
 COPY requirements.txt /app/requirements.txt
 RUN pip3 install --no-cache-dir -r requirements.txt
 
+# Download model and dataset
+RUN python3 -c "from transformers import AutoTokenizer, AutoModelForCausalLM; AutoTokenizer.from_pretrained('NousResearch/Meta-Llama-3-8B-Instruct'); AutoModelForCausalLM.from_pretrained('NousResearch/Meta-Llama-3-8B-Instruct')"
+RUN python3 -c "from datasets import load_dataset; load_dataset('jmaczan/rick-and-morty-scripts-llama-2', split='train')"
+
 # Copy application files
 COPY Dockerfile-llama3-8b /app/Dockerfile-llama3-8b
 COPY main.py /app/main.py
