@@ -1,11 +1,9 @@
-#/usr/bin/env python3
 import torch
 from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    HfArgumentParser,
     TrainingArguments,
     pipeline,
     logging,
@@ -13,117 +11,51 @@ from transformers import (
 from peft import LoraConfig, PeftModel
 from trl import SFTTrainer
 
-print("main.py started") 
-# The model that you want to train from the Hugging Face hub
-model_name = "NousResearch/Meta-Llama-3-8B-Instruct"
+print("main.py started")
 
-# The instruction dataset to use
-dataset_name = "jmaczan/rick-and-morty-scripts-llama-2" #"mlabonne/guanaco-llama2-1k"
-
-# Fine-tuned model name
+# Use local paths for model and dataset
+model_name = "/app/.cache/huggingface/hub/models--NousResearch--Meta-Llama-3-8B-Instruct"
+dataset_name = "/app/.cache/huggingface/datasets/jmaczan___json/jmaczan--rick-and-morty-scripts-llama-2-82fd8ace2dd3c5d3/0.0.0/8bb11242116d547c741b2e8a1f18598ffdd40a1d4f2a2872c7a28b697434bc96"
 new_model = "llama-2-7b-rick-c-137"
 
-################################################################################
 # QLoRA parameters
-################################################################################
-
-# LoRA attention dimension
 lora_r = 64
-
-# Alpha parameter for LoRA scaling
 lora_alpha = 16
-
-# Dropout probability for LoRA layers
 lora_dropout = 0.1
 
-################################################################################
 # bitsandbytes parameters
-################################################################################
-
-# Activate 4-bit precision base model loading
 use_4bit = True
-
-# Compute dtype for 4-bit base models
 bnb_4bit_compute_dtype = "float16"
-
-# Quantization type (fp4 or nf4)
 bnb_4bit_quant_type = "nf4"
-
-# Activate nested quantization for 4-bit base models (double quantization)
 use_nested_quant = False
 
-################################################################################
 # TrainingArguments parameters
-################################################################################
-
-# Output directory where the model predictions and checkpoints will be stored
-output_dir = "./results"
-
-# Number of training epochs
+output_dir = "/app/results"
 num_train_epochs = 1
-
-# Enable fp16/bf16 training (set bf16 to True with an A100)
 fp16 = False
 bf16 = False
-
-# Batch size per GPU for training
 per_device_train_batch_size = 4
-
-# Batch size per GPU for evaluation
 per_device_eval_batch_size = 4
-
-# Number of update steps to accumulate the gradients for
 gradient_accumulation_steps = 1
-
-# Enable gradient checkpointing
 gradient_checkpointing = True
-
-# Maximum gradient normal (gradient clipping)
 max_grad_norm = 0.3
-
-# Initial learning rate (AdamW optimizer)
 learning_rate = 2e-4
-
-# Weight decay to apply to all layers except bias/LayerNorm weights
 weight_decay = 0.001
-
-# Optimizer to use
 optim = "paged_adamw_32bit"
-
-# Learning rate schedule (constant a bit better than cosine)
 lr_scheduler_type = "constant"
-
-# Number of training steps (overrides num_train_epochs)
 max_steps = -1
-
-# Ratio of steps for a linear warmup (from 0 to learning rate)
 warmup_ratio = 0.03
-
-# Group sequences into batches with same length
-# Saves memory and speeds up training considerably
 group_by_length = True
-
-# Save checkpoint every X updates steps
 save_steps = 25
-
-# Log every X updates steps
 logging_steps = 25
 
-################################################################################
 # SFT parameters
-################################################################################
-
-# Maximum sequence length to use
 max_seq_length = None
-
-# Pack multiple short examples in the same input sequence to increase efficiency
 packing = False
-
-# Load the entire model on the GPU 0
 device_map = {"": 0}
 
-# Load dataset (you can process it here)
-dataset = load_dataset(dataset_name, split="train")
+# Load dataset from local file
+dataset = load_dataset("json", data_files=dataset_name, split="train")
 
 # Load tokenizer and model with QLoRA configuration
 compute_dtype = getattr(torch, bnb_4bit_compute_dtype)
@@ -135,25 +67,18 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_use_double_quant=use_nested_quant,
 )
 
-# Check GPU compatibility with bfloat16
-if compute_dtype == torch.float16 and use_4bit:
-    major, _ = torch.cuda.get_device_capability()
-    if major >= 8:
-        print("=" * 80)
-        print("Your GPU supports bfloat16: accelerate training with bf16=True")
-        print("=" * 80)
-
-# Load base model
+# Load base model from local files
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     quantization_config=bnb_config,
-    device_map=device_map
+    device_map=device_map,
+    local_files_only=True
 )
 model.config.use_cache = False
 model.config.pretraining_tp = 1
 
-# Load LLaMA tokenizer
-tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+# Load LLaMA tokenizer from local files
+tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
 tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "right"
@@ -185,7 +110,6 @@ training_arguments = TrainingArguments(
     warmup_ratio=warmup_ratio,
     group_by_length=group_by_length,
     lr_scheduler_type=lr_scheduler_type,
-    # report_to="tensorboard"
 )
 
 # Set supervised fine-tuning parameters
@@ -204,12 +128,12 @@ trainer = SFTTrainer(
 trainer.train()
 
 # Save trained model
-trainer.model.save_pretrained(new_model)
+trainer.model.save_pretrained(f"/app/{new_model}")
 
 # Ignore warnings
 logging.set_verbosity(logging.CRITICAL)
 
-# Run text generation pipeline with our next model
+# Run text generation pipeline with our new model
 prompt = "Who are you?"
 pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
 result = pipe(f"<s>[INST] {prompt} [/INST]")
@@ -221,25 +145,18 @@ base_model = AutoModelForCausalLM.from_pretrained(
     return_dict=True,
     torch_dtype=torch.float16,
     device_map=device_map,
+    local_files_only=True
 )
-model = PeftModel.from_pretrained(base_model, new_model)
+model = PeftModel.from_pretrained(base_model, f"/app/{new_model}")
 model = model.merge_and_unload()
 
 # Reload tokenizer to save it
-tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
 tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "right"
 
-# !huggingface-cli login
-
-# model.push_to_hub(new_model, use_temp_dir=False)
-# tokenizer.push_to_hub(new_model, use_temp_dir=False)
-
-# Ignore warnings
-logging.set_verbosity(logging.CRITICAL)
-
-# Run text generation pipeline with our next model
+# Run text generation pipeline with our new model
 prompt = "What are you doing in your garage?"
 pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
 result = pipe(f"<s>[INST] {prompt} [/INST]")
