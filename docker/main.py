@@ -25,6 +25,9 @@ def print_directory_contents(path):
 print("main.py started")
 
 # Debug: Print directory contents
+print_directory_contents("/")
+
+# Debug: Print directory contents
 print_directory_contents("/app")
 
 # Use local paths for model and dataset
