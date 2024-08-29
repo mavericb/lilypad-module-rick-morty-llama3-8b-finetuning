@@ -1,11 +1,10 @@
-#/usr/bin/env python3
+import os
 import torch
-from datasets import load_dataset
+from datasets import load_from_disk
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    HfArgumentParser,
     TrainingArguments,
     pipeline,
     logging,
@@ -13,117 +12,83 @@ from transformers import (
 from peft import LoraConfig, PeftModel
 from trl import SFTTrainer
 
-print("main.py started") 
-# The model that you want to train from the Hugging Face hub
-model_name = "NousResearch/Meta-Llama-3-8B-Instruct"
+def print_directory_contents(path):
+    print(f"Contents of {path}:")
+    for item in os.listdir(path):
+        item_path = os.path.join(path, item)
+        if os.path.isdir(item_path):
+            print(f"  [DIR] {item}")
+            print_directory_contents(item_path)
+        else:
+            print(f"  [FILE] {item}")
 
-# The instruction dataset to use
-dataset_name = "jmaczan/rick-and-morty-scripts-llama-2" #"mlabonne/guanaco-llama2-1k"
+print("main.py started")
 
-# Fine-tuned model name
+# Debug: Print directory contents
+print_directory_contents("/app")
+
+# Use local paths for model and dataset
+model_base_path = "/app/model/models--NousResearch--Meta-Llama-3-8B-Instruct"
+dataset_name = "/app/dataset"
 new_model = "llama-2-7b-rick-c-137"
 
-################################################################################
+# Find the correct model path
+model_snapshots = os.path.join(model_base_path, "snapshots")
+if os.path.exists(model_snapshots):
+    snapshot_dirs = [d for d in os.listdir(model_snapshots) if os.path.isdir(os.path.join(model_snapshots, d))]
+    if snapshot_dirs:
+        model_name = os.path.join(model_snapshots, sorted(snapshot_dirs)[-1])
+    else:
+        model_name = model_base_path
+else:
+    model_name = model_base_path
+
+print(f"Using model path: {model_name}")
+
 # QLoRA parameters
-################################################################################
-
-# LoRA attention dimension
 lora_r = 64
-
-# Alpha parameter for LoRA scaling
 lora_alpha = 16
-
-# Dropout probability for LoRA layers
 lora_dropout = 0.1
 
-################################################################################
 # bitsandbytes parameters
-################################################################################
-
-# Activate 4-bit precision base model loading
 use_4bit = True
-
-# Compute dtype for 4-bit base models
 bnb_4bit_compute_dtype = "float16"
-
-# Quantization type (fp4 or nf4)
 bnb_4bit_quant_type = "nf4"
-
-# Activate nested quantization for 4-bit base models (double quantization)
 use_nested_quant = False
 
-################################################################################
 # TrainingArguments parameters
-################################################################################
-
-# Output directory where the model predictions and checkpoints will be stored
-output_dir = "./results"
-
-# Number of training epochs
+output_dir = "/app/results"
 num_train_epochs = 1
-
-# Enable fp16/bf16 training (set bf16 to True with an A100)
 fp16 = False
 bf16 = False
-
-# Batch size per GPU for training
 per_device_train_batch_size = 4
-
-# Batch size per GPU for evaluation
 per_device_eval_batch_size = 4
-
-# Number of update steps to accumulate the gradients for
 gradient_accumulation_steps = 1
-
-# Enable gradient checkpointing
 gradient_checkpointing = True
-
-# Maximum gradient normal (gradient clipping)
 max_grad_norm = 0.3
-
-# Initial learning rate (AdamW optimizer)
 learning_rate = 2e-4
-
-# Weight decay to apply to all layers except bias/LayerNorm weights
 weight_decay = 0.001
-
-# Optimizer to use
 optim = "paged_adamw_32bit"
-
-# Learning rate schedule (constant a bit better than cosine)
 lr_scheduler_type = "constant"
-
-# Number of training steps (overrides num_train_epochs)
 max_steps = -1
-
-# Ratio of steps for a linear warmup (from 0 to learning rate)
 warmup_ratio = 0.03
-
-# Group sequences into batches with same length
-# Saves memory and speeds up training considerably
 group_by_length = True
-
-# Save checkpoint every X updates steps
 save_steps = 25
-
-# Log every X updates steps
 logging_steps = 25
 
-################################################################################
 # SFT parameters
-################################################################################
-
-# Maximum sequence length to use
 max_seq_length = None
-
-# Pack multiple short examples in the same input sequence to increase efficiency
 packing = False
-
-# Load the entire model on the GPU 0
 device_map = {"": 0}
 
-# Load dataset (you can process it here)
-dataset = load_dataset(dataset_name, split="train")
+# Load dataset from local file
+try:
+    dataset = load_from_disk(dataset_name)
+    print(f"Dataset loaded successfully from {dataset_name}")
+    print(f"Dataset info: {dataset}")
+except Exception as e:
+    print(f"Error loading dataset: {e}")
+    raise
 
 # Load tokenizer and model with QLoRA configuration
 compute_dtype = getattr(torch, bnb_4bit_compute_dtype)
@@ -135,25 +100,34 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_use_double_quant=use_nested_quant,
 )
 
-# Check GPU compatibility with bfloat16
-if compute_dtype == torch.float16 and use_4bit:
-    major, _ = torch.cuda.get_device_capability()
-    if major >= 8:
-        print("=" * 80)
-        print("Your GPU supports bfloat16: accelerate training with bf16=True")
-        print("=" * 80)
+# Load base model from local files
+try:
+    print(f"Attempting to load model from {model_name}")
+    print_directory_contents(model_name)
+    
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        quantization_config=bnb_config,
+        device_map=device_map,
+        local_files_only=True,
+        trust_remote_code=True,
+    )
+    print(f"Model loaded successfully from {model_name}")
+except Exception as e:
+    print(f"Error loading model: {e}")
+    raise
 
-# Load base model
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    quantization_config=bnb_config,
-    device_map=device_map
-)
 model.config.use_cache = False
 model.config.pretraining_tp = 1
 
-# Load LLaMA tokenizer
-tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+# Load LLaMA tokenizer from local files
+try:
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
+    print(f"Tokenizer loaded successfully from {model_name}")
+except Exception as e:
+    print(f"Error loading tokenizer: {e}")
+    raise
+
 tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "right"
@@ -185,62 +159,90 @@ training_arguments = TrainingArguments(
     warmup_ratio=warmup_ratio,
     group_by_length=group_by_length,
     lr_scheduler_type=lr_scheduler_type,
-    # report_to="tensorboard"
 )
 
 # Set supervised fine-tuning parameters
-trainer = SFTTrainer(
-    model=model,
-    train_dataset=dataset,
-    peft_config=peft_config,
-    dataset_text_field="text",
-    max_seq_length=max_seq_length,
-    tokenizer=tokenizer,
-    args=training_arguments,
-    packing=packing,
-)
+try:
+    trainer = SFTTrainer(
+        model=model,
+        train_dataset=dataset,
+        peft_config=peft_config,
+        dataset_text_field="text",
+        max_seq_length=max_seq_length,
+        tokenizer=tokenizer,
+        args=training_arguments,
+        packing=packing,
+    )
+    print("SFTTrainer initialized successfully")
+except Exception as e:
+    print(f"Error initializing SFTTrainer: {e}")
+    raise
 
 # Train model
-trainer.train()
+try:
+    print("Starting model training...")
+    trainer.train()
+    print("Model training completed successfully")
+except Exception as e:
+    print(f"Error during model training: {e}")
+    raise
 
 # Save trained model
-trainer.model.save_pretrained(new_model)
+try:
+    trainer.model.save_pretrained(f"/app/{new_model}")
+    print(f"Trained model saved to /app/{new_model}")
+except Exception as e:
+    print(f"Error saving trained model: {e}")
+    raise
 
 # Ignore warnings
 logging.set_verbosity(logging.CRITICAL)
 
-# Run text generation pipeline with our next model
-prompt = "Who are you?"
-pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
-result = pipe(f"<s>[INST] {prompt} [/INST]")
-print(result[0]['generated_text'])
+# Run text generation pipeline with our new model
+try:
+    prompt = "Who are you?"
+    pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
+    result = pipe(f"<s>[INST] {prompt} [/INST]")
+    print("Text generation result:")
+    print(result[0]['generated_text'])
+except Exception as e:
+    print(f"Error during text generation: {e}")
 
-base_model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    low_cpu_mem_usage=True,
-    return_dict=True,
-    torch_dtype=torch.float16,
-    device_map=device_map,
-)
-model = PeftModel.from_pretrained(base_model, new_model)
-model = model.merge_and_unload()
+try:
+    base_model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        low_cpu_mem_usage=True,
+        return_dict=True,
+        torch_dtype=torch.float16,
+        device_map=device_map,
+        local_files_only=True
+    )
+    model = PeftModel.from_pretrained(base_model, f"/app/{new_model}")
+    model = model.merge_and_unload()
+    print("Model merged and unloaded successfully")
+except Exception as e:
+    print(f"Error merging and unloading model: {e}")
+    raise
 
 # Reload tokenizer to save it
-tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-tokenizer.pad_token = tokenizer.eos_token
-tokenizer.padding_side = "right"
+try:
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
+    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
+    print("Tokenizer reloaded successfully")
+except Exception as e:
+    print(f"Error reloading tokenizer: {e}")
+    raise
 
-# !huggingface-cli login
+# Run text generation pipeline with our new model
+try:
+    prompt = "What are you doing in your garage?"
+    pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
+    result = pipe(f"<s>[INST] {prompt} [/INST]")
+    print("Final text generation result:")
+    print(result[0]['generated_text'])
+except Exception as e:
+    print(f"Error during final text generation: {e}")
 
-# model.push_to_hub(new_model, use_temp_dir=False)
-# tokenizer.push_to_hub(new_model, use_temp_dir=False)
-
-# Ignore warnings
-logging.set_verbosity(logging.CRITICAL)
-
-# Run text generation pipeline with our next model
-prompt = "What are you doing in your garage?"
-pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
-result = pipe(f"<s>[INST] {prompt} [/INST]")
-print(result[0]['generated_text'])
+print("main.py execution completed")
