@@ -50,8 +50,8 @@ RUN python3 -c "from transformers import AutoTokenizer, AutoModelForCausalLM; Au
 RUN python3 -c "from datasets import load_dataset; load_dataset('jmaczan/rick-and-morty-scripts-llama-2', split='train')"
 
 # Copy application files
-COPY main.py /app/main.py
-COPY start.sh /app/start.sh
+COPY docker/main.py /app/main.py
+COPY docker/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
 # Set the entrypoint
