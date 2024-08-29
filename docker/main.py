@@ -1,3 +1,4 @@
+import os
 import torch
 from datasets import load_from_disk
 from transformers import (
@@ -14,10 +15,15 @@ from trl import SFTTrainer
 print("main.py started")
 
 # Use local paths for model and dataset
-# model_name = "/app/model/NousResearch/Meta-Llama-3-8B-Instruct"
 model_name = "/app/model"
 dataset_name = "/app/dataset"
 new_model = "llama-2-7b-rick-c-137"
+
+# Debug: Print directory contents
+print("Contents of /app:")
+print(os.listdir("/app"))
+print("Contents of /app/model:")
+print(os.listdir("/app/model"))
 
 # QLoRA parameters
 lora_r = 64
@@ -55,6 +61,15 @@ max_seq_length = None
 packing = False
 device_map = {"": 0}
 
+# Load dataset from local file
+try:
+    dataset = load_from_disk(dataset_name)
+    print(f"Dataset loaded successfully from {dataset_name}")
+    print(f"Dataset info: {dataset}")
+except Exception as e:
+    print(f"Error loading dataset: {e}")
+    raise
+
 # Load tokenizer and model with QLoRA configuration
 compute_dtype = getattr(torch, bnb_4bit_compute_dtype)
 
@@ -66,17 +81,31 @@ bnb_config = BitsAndBytesConfig(
 )
 
 # Load base model from local files
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    quantization_config=bnb_config,
-    device_map=device_map,
-    local_files_only=True
-)
+try:
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        quantization_config=bnb_config,
+        device_map=device_map,
+        local_files_only=True
+    )
+    print(f"Model loaded successfully from {model_name}")
+    print(f"Model config: {model.config}")
+except Exception as e:
+    print(f"Error loading model: {e}")
+    raise
+
 model.config.use_cache = False
 model.config.pretraining_tp = 1
 
 # Load LLaMA tokenizer from local files
-tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
+try:
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
+    print("Tokenizer loaded successfully")
+    print(f"Tokenizer vocab size: {len(tokenizer)}")
+except Exception as e:
+    print(f"Error loading tokenizer: {e}")
+    raise
+
 tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "right"
@@ -111,51 +140,87 @@ training_arguments = TrainingArguments(
 )
 
 # Set supervised fine-tuning parameters
-trainer = SFTTrainer(
-    model=model,
-    train_dataset=dataset,
-    peft_config=peft_config,
-    dataset_text_field="text",
-    max_seq_length=max_seq_length,
-    tokenizer=tokenizer,
-    args=training_arguments,
-    packing=packing,
-)
+try:
+    trainer = SFTTrainer(
+        model=model,
+        train_dataset=dataset,
+        peft_config=peft_config,
+        dataset_text_field="text",
+        max_seq_length=max_seq_length,
+        tokenizer=tokenizer,
+        args=training_arguments,
+        packing=packing,
+    )
+    print("SFTTrainer initialized successfully")
+except Exception as e:
+    print(f"Error initializing SFTTrainer: {e}")
+    raise
 
 # Train model
-trainer.train()
+try:
+    print("Starting model training...")
+    trainer.train()
+    print("Model training completed successfully")
+except Exception as e:
+    print(f"Error during model training: {e}")
+    raise
 
 # Save trained model
-trainer.model.save_pretrained(f"/app/{new_model}")
+try:
+    trainer.model.save_pretrained(f"/app/{new_model}")
+    print(f"Trained model saved to /app/{new_model}")
+except Exception as e:
+    print(f"Error saving trained model: {e}")
+    raise
 
 # Ignore warnings
 logging.set_verbosity(logging.CRITICAL)
 
 # Run text generation pipeline with our new model
-prompt = "Who are you?"
-pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
-result = pipe(f"<s>[INST] {prompt} [/INST]")
-print(result[0]['generated_text'])
+try:
+    prompt = "Who are you?"
+    pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
+    result = pipe(f"<s>[INST] {prompt} [/INST]")
+    print("Text generation result:")
+    print(result[0]['generated_text'])
+except Exception as e:
+    print(f"Error during text generation: {e}")
 
-base_model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    low_cpu_mem_usage=True,
-    return_dict=True,
-    torch_dtype=torch.float16,
-    device_map=device_map,
-    local_files_only=True
-)
-model = PeftModel.from_pretrained(base_model, f"/app/{new_model}")
-model = model.merge_and_unload()
+try:
+    base_model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        low_cpu_mem_usage=True,
+        return_dict=True,
+        torch_dtype=torch.float16,
+        device_map=device_map,
+        local_files_only=True
+    )
+    model = PeftModel.from_pretrained(base_model, f"/app/{new_model}")
+    model = model.merge_and_unload()
+    print("Model merged and unloaded successfully")
+except Exception as e:
+    print(f"Error merging and unloading model: {e}")
+    raise
 
 # Reload tokenizer to save it
-tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
-tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-tokenizer.pad_token = tokenizer.eos_token
-tokenizer.padding_side = "right"
+try:
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
+    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
+    print("Tokenizer reloaded successfully")
+except Exception as e:
+    print(f"Error reloading tokenizer: {e}")
+    raise
 
 # Run text generation pipeline with our new model
-prompt = "What are you doing in your garage?"
-pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
-result = pipe(f"<s>[INST] {prompt} [/INST]")
-print(result[0]['generated_text'])
+try:
+    prompt = "What are you doing in your garage?"
+    pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
+    result = pipe(f"<s>[INST] {prompt} [/INST]")
+    print("Final text generation result:")
+    print(result[0]['generated_text'])
+except Exception as e:
+    print(f"Error during final text generation: {e}")
+
+print("main.py execution completed")
