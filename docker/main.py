@@ -12,15 +12,17 @@ from transformers import (
 from peft import LoraConfig, PeftModel
 from trl import SFTTrainer
 
+import os
+
 def print_directory_contents(path):
     print(f"Contents of {path}:")
-    for item in os.listdir(path):
-        item_path = os.path.join(path, item)
-        if os.path.isdir(item_path):
-            print(f"  [DIR] {item}")
-            print_directory_contents(item_path)
-        else:
-            print(f"  [FILE] {item}")
+    for root, dirs, files in os.walk(path):
+        level = root.replace(path, '').count(os.sep)
+        indent = ' ' * 4 * level
+        print(f"{indent}[DIR] {os.path.basename(root)}/")
+        sub_indent = ' ' * 4 * (level + 1)
+        for file in files:
+            print(f"{sub_indent}[FILE] {file}")
 
 print("main.py started")
 
