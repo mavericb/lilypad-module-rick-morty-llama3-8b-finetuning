@@ -21,10 +21,6 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 RUN python3 -c "from transformers import AutoTokenizer, AutoModelForCausalLM; AutoTokenizer.from_pretrained('NousResearch/Meta-Llama-3-8B-Instruct', cache_dir='/app/model'); AutoModelForCausalLM.from_pretrained('NousResearch/Meta-Llama-3-8B-Instruct', cache_dir='/app/model')"
 RUN python3 -c "from datasets import load_dataset; dataset = load_dataset('jmaczan/rick-and-morty-scripts-llama-2', split='train'); dataset.save_to_disk('/app/dataset')"
 
-# Copy model and dataset from builder stage
-COPY --from=builder /app/model /app/model
-COPY --from=builder /app/dataset /app/dataset
-
 # Copy application files
 COPY Dockerfile-llama3-8b /app/Dockerfile-llama3-8b
 COPY main.py /app/main.py
