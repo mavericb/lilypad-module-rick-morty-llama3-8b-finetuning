@@ -1,5 +1,5 @@
 import torch
-from datasets import load_dataset
+from datasets import load_from_disk
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -14,8 +14,8 @@ from trl import SFTTrainer
 print("main.py started")
 
 # Use local paths for model and dataset
-model_name = "/app/.cache/huggingface/hub/models--NousResearch--Meta-Llama-3-8B-Instruct"
-dataset_name = "/app/.cache/huggingface/datasets/jmaczan___json/jmaczan--rick-and-morty-scripts-llama-2-82fd8ace2dd3c5d3/0.0.0/8bb11242116d547c741b2e8a1f18598ffdd40a1d4f2a2872c7a28b697434bc96"
+model_name = "/app/model/NousResearch/Meta-Llama-3-8B-Instruct"
+dataset_name = "/app/dataset"
 new_model = "llama-2-7b-rick-c-137"
 
 # QLoRA parameters
@@ -53,9 +53,6 @@ logging_steps = 25
 max_seq_length = None
 packing = False
 device_map = {"": 0}
-
-# Load dataset from local file
-dataset = load_dataset("json", data_files=dataset_name, split="train")
 
 # Load tokenizer and model with QLoRA configuration
 compute_dtype = getattr(torch, bnb_4bit_compute_dtype)
