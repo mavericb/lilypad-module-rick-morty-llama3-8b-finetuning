@@ -1,29 +1,3 @@
-# FROM nvidia/cuda:11.8.0-devel-ubuntu22.04 AS builder
-
-# ARG HUGGINGFACE_TOKEN
-
-# RUN mkdir /app
-# WORKDIR /app
-
-# RUN export DEBIAN_FRONTEND=noninteractive && \
-#     apt-get update -y && \
-#     apt-get install -y curl python3 python3-pip git libgl1-mesa-glx libglib2.0-0
-
-# # Install additional dependencies required by main.py
-# RUN pip3 install accelerate==0.21.0 peft==0.4.0 bitsandbytes==0.40.2 transformers==4.31.0 trl==0.4.7 scipy
-
-# # Copy main.py script
-# # COPY docker/main.py /app/main.py # local docker build
-# COPY main.py /app/main.py
-
-# FROM builder as runner
-# # COPY docker/start.sh / # local docker build
-# COPY start.sh /
-# RUN chmod +x /start.sh
-
-# CMD ["/start.sh"]
-
-
 # Use NVIDIA CUDA base image
 FROM nvidia/cuda:11.8.0-devel-ubuntu22.04 AS builder
 
@@ -32,7 +6,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
 # Set working directory
-RUN mkdir /app
 WORKDIR /app
 
 # Install system dependencies
@@ -40,17 +13,17 @@ RUN apt-get update -y && \
     apt-get install -y curl python3 python3-pip git libgl1-mesa-glx libglib2.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt /app/requirements.txt # local docker
+# Copy and install Python dependencies
+COPY requirements.txt /app/requirements.txt
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Download model and dataset
-RUN python3 -c "from transformers import AutoTokenizer, AutoModelForCausalLM; AutoTokenizer.from_pretrained('NousResearch/Meta-Llama-3-8B-Instruct', cache_dir='/app/model'); AutoModelForCausalLM.from_pretrained('NousResearch/Meta-Llama-3-8B-Instruct', cache_dir='/app/model')"
-RUN python3 -c "from datasets import load_dataset; dataset = load_dataset('jmaczan/rick-and-morty-scripts-llama-2', split='train'); dataset.save_to_disk('/app/dataset')"
-
 # Copy application files
-COPY main.py /app/main.py # local docker
+COPY Dockerfile-llama3-8b /app/Dockerfile-llama3-8b
+COPY main.py /app/main.py
+COPY requirements.txt /app/requirements.txt
 COPY start.sh /app/start.sh
+
+# Make start.sh executable
 RUN chmod +x /app/start.sh
 
 # Set environment variables for runtime
