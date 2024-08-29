@@ -14,16 +14,16 @@ from trl import SFTTrainer
 
 print("main.py started")
 
-# Use local paths for model and dataset
-model_name = "/app/model"
-dataset_name = "/app/dataset"
-new_model = "llama-2-7b-rick-c-137"
-
 # Debug: Print directory contents
 print("Contents of /app:")
 print(os.listdir("/app"))
 print("Contents of /app/model:")
 print(os.listdir("/app/model"))
+
+# Use local paths for model and dataset
+model_name = "/app/model/models--NousResearch--Meta-Llama-3-8B-Instruct"
+dataset_name = "/app/dataset"
+new_model = "llama-2-7b-rick-c-137"
 
 # QLoRA parameters
 lora_r = 64
@@ -82,14 +82,18 @@ bnb_config = BitsAndBytesConfig(
 
 # Load base model from local files
 try:
+    print(f"Attempting to load model from {model_name}")
+    print(f"Contents of {model_name}:")
+    print(os.listdir(model_name))
+    
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         quantization_config=bnb_config,
         device_map=device_map,
-        local_files_only=True
+        local_files_only=True,
+        trust_remote_code=True,
     )
     print(f"Model loaded successfully from {model_name}")
-    print(f"Model config: {model.config}")
 except Exception as e:
     print(f"Error loading model: {e}")
     raise
@@ -100,8 +104,7 @@ model.config.pretraining_tp = 1
 # Load LLaMA tokenizer from local files
 try:
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
-    print("Tokenizer loaded successfully")
-    print(f"Tokenizer vocab size: {len(tokenizer)}")
+    print(f"Tokenizer loaded successfully from {model_name}")
 except Exception as e:
     print(f"Error loading tokenizer: {e}")
     raise
@@ -140,87 +143,51 @@ training_arguments = TrainingArguments(
 )
 
 # Set supervised fine-tuning parameters
-try:
-    trainer = SFTTrainer(
-        model=model,
-        train_dataset=dataset,
-        peft_config=peft_config,
-        dataset_text_field="text",
-        max_seq_length=max_seq_length,
-        tokenizer=tokenizer,
-        args=training_arguments,
-        packing=packing,
-    )
-    print("SFTTrainer initialized successfully")
-except Exception as e:
-    print(f"Error initializing SFTTrainer: {e}")
-    raise
+trainer = SFTTrainer(
+    model=model,
+    train_dataset=dataset,
+    peft_config=peft_config,
+    dataset_text_field="text",
+    max_seq_length=max_seq_length,
+    tokenizer=tokenizer,
+    args=training_arguments,
+    packing=packing,
+)
 
 # Train model
-try:
-    print("Starting model training...")
-    trainer.train()
-    print("Model training completed successfully")
-except Exception as e:
-    print(f"Error during model training: {e}")
-    raise
+trainer.train()
 
 # Save trained model
-try:
-    trainer.model.save_pretrained(f"/app/{new_model}")
-    print(f"Trained model saved to /app/{new_model}")
-except Exception as e:
-    print(f"Error saving trained model: {e}")
-    raise
+trainer.model.save_pretrained(f"/app/{new_model}")
 
 # Ignore warnings
 logging.set_verbosity(logging.CRITICAL)
 
 # Run text generation pipeline with our new model
-try:
-    prompt = "Who are you?"
-    pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
-    result = pipe(f"<s>[INST] {prompt} [/INST]")
-    print("Text generation result:")
-    print(result[0]['generated_text'])
-except Exception as e:
-    print(f"Error during text generation: {e}")
+prompt = "Who are you?"
+pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
+result = pipe(f"<s>[INST] {prompt} [/INST]")
+print(result[0]['generated_text'])
 
-try:
-    base_model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        low_cpu_mem_usage=True,
-        return_dict=True,
-        torch_dtype=torch.float16,
-        device_map=device_map,
-        local_files_only=True
-    )
-    model = PeftModel.from_pretrained(base_model, f"/app/{new_model}")
-    model = model.merge_and_unload()
-    print("Model merged and unloaded successfully")
-except Exception as e:
-    print(f"Error merging and unloading model: {e}")
-    raise
+base_model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    low_cpu_mem_usage=True,
+    return_dict=True,
+    torch_dtype=torch.float16,
+    device_map=device_map,
+    local_files_only=True
+)
+model = PeftModel.from_pretrained(base_model, f"/app/{new_model}")
+model = model.merge_and_unload()
 
 # Reload tokenizer to save it
-try:
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
-    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
-    print("Tokenizer reloaded successfully")
-except Exception as e:
-    print(f"Error reloading tokenizer: {e}")
-    raise
+tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
+tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+tokenizer.pad_token = tokenizer.eos_token
+tokenizer.padding_side = "right"
 
 # Run text generation pipeline with our new model
-try:
-    prompt = "What are you doing in your garage?"
-    pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
-    result = pipe(f"<s>[INST] {prompt} [/INST]")
-    print("Final text generation result:")
-    print(result[0]['generated_text'])
-except Exception as e:
-    print(f"Error during final text generation: {e}")
-
-print("main.py execution completed")
+prompt = "What are you doing in your garage?"
+pipe = pipeline(task="text-generation", model=model, tokenizer=tokenizer, max_length=200)
+result = pipe(f"<s>[INST] {prompt} [/INST]")
+print(result[0]['generated_text'])
